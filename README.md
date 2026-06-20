@@ -29,37 +29,6 @@
 | 🎨 **Custom Box Colors** | Choose your preferred bounding box color |
 | 🖥️ **Premium Dark UI** | Glassmorphism design with gradient accents |
 
----
-
-## 🚀 Installation
-
-### Prerequisites
-- Python 3.8 or higher
-- pip (Python package manager)
-- Git
-
-### Setup
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/BKiran27/face-detection-system.git
-   cd face-detection-system
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Run the application:**
-   ```bash
-   streamlit run app.py
-   ```
-
-4. **Open in browser:**
-   The app will automatically open at `http://localhost:8501`
-
----
 
 ## 📖 Usage
 
