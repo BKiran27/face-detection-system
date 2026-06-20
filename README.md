@@ -137,13 +137,6 @@ face-detection-system/
 - [ ] 🎥 WebRTC live video streaming
 - [ ] 🧠 Deep learning-based detection (DNN/MTCNN)
 
----
-
-## 💼 Resume Description
-
-> **Face Detection System** — Developed a real-time Face Detection System using Python and OpenCV. Implemented image preprocessing, Haar Cascade-based face detection, webcam integration, and an interactive Streamlit application capable of detecting multiple faces in images, video files, and live webcam feeds. Features include adjustable detection parameters, face counting, face cropping, and a premium dark-themed UI with glassmorphism design.
-
----
 
 ## 📜 License
 
