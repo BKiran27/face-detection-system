@@ -1,8 +1,9 @@
 """
-Face Detection System — Streamlit Application
-==============================================
-An interactive web application for detecting faces in images,
-webcam snapshots, and video files using OpenCV Haar Cascade.
+Face Detection & Mask Compliance System — Streamlit Application
+================================================================
+An interactive web application for detecting faces and determining face mask compliance
+in images, webcam snapshots, and video files. Powered by OpenCV Haar Cascades
+and a lightweight Deep Learning SSD (Single Shot Detector) model.
 
 Author: BKiran27
 Run:    streamlit run app.py
@@ -26,11 +27,19 @@ from detect import (
     process_video_frame,
 )
 
+from mask_detect import (
+    load_mask_net,
+    detect_masks,
+    draw_mask_bounding_boxes,
+    draw_mask_count_badge,
+    crop_mask_faces,
+)
+
 # ─── Page Configuration ─────────────────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="Face Detection System",
-    page_icon="👁️",
+    page_title="Face & Mask Detection System",
+    page_icon="😷",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -263,12 +272,18 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# ─── Initialize Face Cascade (cached) ───────────────────────────────────────────
+# ─── Initialize Face Cascade & DNN Net (cached) ─────────────────────────────────
 
 @st.cache_resource
 def get_face_cascade():
     """Cache the face cascade classifier for performance."""
     return load_face_cascade()
+
+
+@st.cache_resource
+def get_mask_net():
+    """Cache the deep learning mask detection network."""
+    return load_mask_net()
 
 
 # ─── Helper Functions ────────────────────────────────────────────────────────────
@@ -301,32 +316,55 @@ def get_image_download_bytes(cv2_image: np.ndarray) -> bytes:
     return buf.getvalue()
 
 
-def render_metrics(face_count: int, image_shape: tuple):
-    """Render metric cards."""
-    st.markdown(f"""
-    <div class="metric-container">
-        <div class="metric-card">
-            <div class="metric-value">{face_count}</div>
-            <div class="metric-label">Faces Detected</div>
+def render_metrics(face_count: int, image_shape: tuple, task: str = "face", mask_count: int = 0, nomask_count: int = 0):
+    """Render metric cards based on selected task."""
+    if task == "face":
+        st.markdown(f"""
+        <div class="metric-container">
+            <div class="metric-card">
+                <div class="metric-value">{face_count}</div>
+                <div class="metric-label">Faces Detected</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">{image_shape[1]}×{image_shape[0]}</div>
+                <div class="metric-label">Resolution</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">{"✅" if face_count > 0 else "❌"}</div>
+                <div class="metric-label">Detection Status</div>
+            </div>
         </div>
-        <div class="metric-card">
-            <div class="metric-value">{image_shape[1]}×{image_shape[0]}</div>
-            <div class="metric-label">Resolution</div>
+        """, unsafe_allow_html=True)
+    else:
+        compliance = (mask_count / face_count * 100) if face_count > 0 else 100.0
+        st.markdown(f"""
+        <div class="metric-container">
+            <div class="metric-card">
+                <div class="metric-value">{face_count}</div>
+                <div class="metric-label">Total Faces</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" style="background: linear-gradient(135deg, #00f5d4, #00ff88); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">{mask_count}</div>
+                <div class="metric-label">Wearing Mask</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" style="background: linear-gradient(135deg, #f72585, #ff4d4d); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">{nomask_count}</div>
+                <div class="metric-label">No Mask</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" style="background: linear-gradient(135deg, #7b61ff, #00f5d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">{compliance:.0f}%</div>
+                <div class="metric-label">Compliance Rate</div>
+            </div>
         </div>
-        <div class="metric-card">
-            <div class="metric-value">{"✅" if face_count > 0 else "❌"}</div>
-            <div class="metric-label">Detection Status</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
 
 # ─── Header ──────────────────────────────────────────────────────────────────────
 
 st.markdown("""
 <div class="main-header">
-    <h1>👁️ Face Detection System</h1>
-    <p>Real-time face detection powered by OpenCV & Haar Cascade Classifier</p>
+    <h1>😷 Face Detection & Mask Compliance</h1>
+    <p>Detect faces and classify mask compliance using OpenCV Cascades & Deep Learning Models</p>
 </div>
 <div class="gradient-divider"></div>
 """, unsafe_allow_html=True)
@@ -335,47 +373,84 @@ st.markdown("""
 # ─── Sidebar ─────────────────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.markdown("## ⚙️ Detection Settings")
+    st.markdown("## 🎯 System Mode")
+    task_mode = st.radio(
+        "Select Task Mode:",
+        options=["👁️ Face Detection (Haar)", "😷 Face Mask Detection (DL)"],
+        index=0,
+        help="Switch between Haar Cascade Face Detection or Deep Learning-based Face Mask Detection."
+    )
+    
     st.markdown('<div class="gradient-divider"></div>', unsafe_allow_html=True)
 
-    scale_factor = st.slider(
-        "🔍 Scale Factor",
-        min_value=1.01,
-        max_value=1.50,
-        value=1.10,
-        step=0.01,
-        help="How much the image size is reduced at each scale. Lower = more thorough but slower.",
-    )
+    if task_mode == "👁️ Face Detection (Haar)":
+        st.markdown("## ⚙️ Haar Cascade Settings")
+        
+        scale_factor = st.slider(
+            "🔍 Scale Factor",
+            min_value=1.01,
+            max_value=1.50,
+            value=1.10,
+            step=0.01,
+            help="How much the image size is reduced at each scale. Lower = more thorough but slower.",
+        )
 
-    min_neighbors = st.slider(
-        "🎯 Min Neighbors",
-        min_value=1,
-        max_value=15,
-        value=5,
-        step=1,
-        help="Higher values reduce false positives but may miss some faces.",
-    )
+        min_neighbors = st.slider(
+            "🎯 Min Neighbors",
+            min_value=1,
+            max_value=15,
+            value=5,
+            step=1,
+            help="Higher values reduce false positives but may miss some faces.",
+        )
 
-    min_face_size = st.slider(
-        "📏 Min Face Size (px)",
-        min_value=10,
-        max_value=200,
-        value=30,
-        step=10,
-        help="Minimum face size in pixels. Increase to ignore small faces.",
-    )
+        min_face_size = st.slider(
+            "📏 Min Face Size (px)",
+            min_value=10,
+            max_value=200,
+            value=30,
+            step=10,
+            help="Minimum face size in pixels. Increase to ignore small faces.",
+        )
+        
+        st.markdown('<div class="gradient-divider"></div>', unsafe_allow_html=True)
+        st.markdown("## 🎨 Display Options")
+        
+        show_labels = st.checkbox("Show face labels", value=True)
+        show_cropped = st.checkbox("Show cropped faces", value=True)
+        box_color_hex = st.color_picker("Box color", "#00FF80")
 
-    st.markdown('<div class="gradient-divider"></div>', unsafe_allow_html=True)
+        # Convert hex to BGR
+        box_color_rgb = tuple(int(box_color_hex[i:i+2], 16) for i in (1, 3, 5))
+        box_color_bgr = (box_color_rgb[2], box_color_rgb[1], box_color_rgb[0])
+    
+    else:
+        st.markdown("## ⚙️ Deep Learning Settings")
+        
+        mask_conf_thresh = st.slider(
+            "🧠 Confidence Threshold",
+            min_value=0.1,
+            max_value=1.0,
+            value=0.5,
+            step=0.05,
+            help="Minimum classification score to accept a mask/nomask detection.",
+        )
 
-    st.markdown("## 🎨 Display Options")
-
-    show_labels = st.checkbox("Show face labels", value=True)
-    show_cropped = st.checkbox("Show cropped faces", value=True)
-    box_color_hex = st.color_picker("Box color", "#00FF80")
-
-    # Convert hex to BGR
-    box_color_rgb = tuple(int(box_color_hex[i:i+2], 16) for i in (1, 3, 5))
-    box_color_bgr = (box_color_rgb[2], box_color_rgb[1], box_color_rgb[0])
+        mask_iou_thresh = st.slider(
+            "⚡ NMS IoU Threshold",
+            min_value=0.1,
+            max_value=1.0,
+            value=0.4,
+            step=0.05,
+            help="Intersection Over Union threshold used by Non-Max Suppression to clean overlapping boxes.",
+        )
+        
+        st.markdown('<div class="gradient-divider"></div>', unsafe_allow_html=True)
+        st.markdown("## 🎨 Display Options")
+        
+        show_labels = st.checkbox("Show classification labels", value=True)
+        show_cropped = st.checkbox("Show cropped faces", value=True)
+        # BGR box color is automatically selected (Green for Mask, Red for NoMask)
 
     st.markdown('<div class="gradient-divider"></div>', unsafe_allow_html=True)
     
@@ -398,16 +473,24 @@ tab_image, tab_webcam, tab_video, tab_about = st.tabs([
     "ℹ️ About",
 ])
 
+# Preload resources
 cascade = get_face_cascade()
+mask_net = None
+if task_mode == "😷 Face Mask Detection (DL)":
+    try:
+        mask_net = get_mask_net()
+    except Exception as e:
+        st.error(f"❌ Error loading Deep Learning Face Mask Detection model: {e}")
+        st.info("Please make sure models/face_mask_detection.prototxt and face_mask_detection.caffemodel exist.")
 
 
 # ─── Tab 1: Image Detection ─────────────────────────────────────────────────────
 
 with tab_image:
-    st.markdown("""
+    st.markdown(f"""
     <div class="glass-card">
         <h3 style="color:#ccd6f6; margin-top:0;">📸 Upload an Image</h3>
-        <p style="color:#8892b0;">Upload a photo and the system will detect all faces in it.</p>
+        <p style="color:#8892b0;">Upload a photo and the system will run {"Face Mask Detection" if task_mode != "👁️ Face Detection (Haar)" else "Face Detection"} on it.</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -452,25 +535,52 @@ with tab_image:
         image_to_process = cv2.imread(selected_sample)
 
     if image_to_process is not None:
-        with st.spinner("🔍 Detecting faces..."):
-            faces = detect_faces(
-                image_to_process,
-                cascade,
-                scale_factor=scale_factor,
-                min_neighbors=min_neighbors,
-                min_size=(min_face_size, min_face_size),
-            )
-            face_count = get_face_count(faces)
+        with st.spinner("🔍 Running detection..."):
+            
+            # --- TASK 1: Face Detection (Haar Cascade) ---
+            if task_mode == "👁️ Face Detection (Haar)":
+                faces = detect_faces(
+                    image_to_process,
+                    cascade,
+                    scale_factor=scale_factor,
+                    min_neighbors=min_neighbors,
+                    min_size=(min_face_size, min_face_size),
+                )
+                face_count = get_face_count(faces)
 
-            result_image = draw_bounding_boxes(
-                image_to_process, faces, color=box_color_bgr, show_label=show_labels
-            )
-            result_image = draw_face_count_badge(result_image, face_count)
+                result_image = draw_bounding_boxes(
+                    image_to_process, faces, color=box_color_bgr, show_label=show_labels
+                )
+                result_image = draw_face_count_badge(result_image, face_count)
+                
+                # Metrics & Outputs
+                render_metrics(face_count, image_to_process.shape, task="face")
 
-        # Metrics
-        render_metrics(face_count, image_to_process.shape)
+            # --- TASK 2: Face Mask Detection (DL SSD) ---
+            else:
+                if mask_net is not None:
+                    detections = detect_masks(
+                        image_to_process,
+                        mask_net,
+                        conf_thresh=mask_conf_thresh,
+                        iou_thresh=mask_iou_thresh
+                    )
+                    face_count = len(detections)
+                    mask_count = sum(1 for d in detections if d['class_id'] == 0)
+                    nomask_count = sum(1 for d in detections if d['class_id'] == 1)
 
-        # Results
+                    result_image = draw_mask_bounding_boxes(
+                        image_to_process, detections, show_label=show_labels
+                    )
+                    result_image = draw_mask_count_badge(result_image, mask_count, nomask_count)
+                    
+                    # Metrics & Outputs
+                    render_metrics(face_count, image_to_process.shape, task="mask", mask_count=mask_count, nomask_count=nomask_count)
+                else:
+                    result_image = image_to_process.copy()
+                    face_count = 0
+
+        # Results Display
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("#### 📷 Original")
@@ -484,39 +594,61 @@ with tab_image:
         st.download_button(
             label="📥 Download Result",
             data=download_bytes,
-            file_name="face_detection_result.png",
+            file_name="mask_compliance_result.png" if task_mode != "👁️ Face Detection (Haar)" else "face_detection_result.png",
             mime="image/png",
         )
 
-        # Cropped faces
+        # Cropped faces analysis
         if show_cropped and face_count > 0:
             st.markdown('<div class="gradient-divider"></div>', unsafe_allow_html=True)
-            st.markdown("#### ✂️ Cropped Faces")
-            cropped = crop_faces(image_to_process, faces)
-            cols = st.columns(min(face_count, 5))
-            for idx, face_img in enumerate(cropped):
-                with cols[idx % len(cols)]:
-                    st.image(
-                        cv2_to_pil(face_img),
-                        caption=f"Face #{idx + 1}",
-                        use_container_width=True,
-                    )
+            st.markdown("#### ✂️ Cropped Face Analysis")
+            
+            if task_mode == "👁️ Face Detection (Haar)":
+                cropped = crop_faces(image_to_process, faces)
+                cols = st.columns(min(face_count, 5))
+                for idx, face_img in enumerate(cropped):
+                    with cols[idx % len(cols)]:
+                        st.image(
+                            cv2_to_pil(face_img),
+                            caption=f"Face #{idx + 1}",
+                            use_container_width=True,
+                        )
+            else:
+                cropped_details = crop_mask_faces(image_to_process, detections)
+                cols = st.columns(min(face_count, 5))
+                for idx, (face_img, det) in enumerate(cropped_details):
+                    with cols[idx % len(cols)]:
+                        conf_percentage = f"{det['confidence']:.0%}"
+                        label_class = det['class_name']
+                        badge = f"🟢 {label_class} ({conf_percentage})" if det['class_id'] == 0 else f"🔴 {label_class} ({conf_percentage})"
+                        st.image(
+                            cv2_to_pil(face_img),
+                            caption=badge,
+                            use_container_width=True,
+                        )
 
         if face_count == 0:
-            st.markdown("""
-            <div class="success-banner" style="border-color: rgba(247, 37, 133, 0.3); color: #f72585;">
-                ⚠️ No faces detected. Try adjusting the <strong>Scale Factor</strong> or <strong>Min Neighbors</strong> in the sidebar.
-            </div>
-            """, unsafe_allow_html=True)
+            if task_mode == "👁️ Face Detection (Haar)":
+                st.markdown("""
+                <div class="success-banner" style="border-color: rgba(247, 37, 133, 0.3); color: #f72585;">
+                    ⚠️ No faces detected. Try adjusting the <strong>Scale Factor</strong> or <strong>Min Neighbors</strong> in the sidebar.
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div class="success-banner" style="border-color: rgba(247, 37, 133, 0.3); color: #f72585;">
+                    ⚠️ No faces or masks detected. Try lowering the <strong>Confidence Threshold</strong> in the sidebar.
+                </div>
+                """, unsafe_allow_html=True)
 
 
 # ─── Tab 2: Webcam Detection ────────────────────────────────────────────────────
 
 with tab_webcam:
-    st.markdown("""
+    st.markdown(f"""
     <div class="glass-card">
         <h3 style="color:#ccd6f6; margin-top:0;">📷 Webcam Snapshot</h3>
-        <p style="color:#8892b0;">Take a photo using your webcam and detect faces instantly.</p>
+        <p style="color:#8892b0;">Take a photo using your webcam and analyze mask compliance instantly.</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -530,22 +662,45 @@ with tab_webcam:
         pil_img = Image.open(camera_image)
         cv2_img = pil_to_cv2(pil_img)
 
-        with st.spinner("🔍 Detecting faces in webcam snapshot..."):
-            faces = detect_faces(
-                cv2_img,
-                cascade,
-                scale_factor=scale_factor,
-                min_neighbors=min_neighbors,
-                min_size=(min_face_size, min_face_size),
-            )
-            face_count = get_face_count(faces)
+        with st.spinner("🔍 Running webcam snapshot detection..."):
+            if task_mode == "👁️ Face Detection (Haar)":
+                faces = detect_faces(
+                    cv2_img,
+                    cascade,
+                    scale_factor=scale_factor,
+                    min_neighbors=min_neighbors,
+                    min_size=(min_face_size, min_face_size),
+                )
+                face_count = get_face_count(faces)
 
-            result_image = draw_bounding_boxes(
-                cv2_img, faces, color=box_color_bgr, show_label=show_labels
-            )
-            result_image = draw_face_count_badge(result_image, face_count)
+                result_image = draw_bounding_boxes(
+                    cv2_img, faces, color=box_color_bgr, show_label=show_labels
+                )
+                result_image = draw_face_count_badge(result_image, face_count)
+                
+                render_metrics(face_count, cv2_img.shape, task="face")
+            
+            else:
+                if mask_net is not None:
+                    detections = detect_masks(
+                        cv2_img,
+                        mask_net,
+                        conf_thresh=mask_conf_thresh,
+                        iou_thresh=mask_iou_thresh
+                    )
+                    face_count = len(detections)
+                    mask_count = sum(1 for d in detections if d['class_id'] == 0)
+                    nomask_count = sum(1 for d in detections if d['class_id'] == 1)
 
-        render_metrics(face_count, cv2_img.shape)
+                    result_image = draw_mask_bounding_boxes(
+                        cv2_img, detections, show_label=show_labels
+                    )
+                    result_image = draw_mask_count_badge(result_image, mask_count, nomask_count)
+                    
+                    render_metrics(face_count, cv2_img.shape, task="mask", mask_count=mask_count, nomask_count=nomask_count)
+                else:
+                    result_image = cv2_img.copy()
+                    face_count = 0
 
         col1, col2 = st.columns(2)
         with col1:
@@ -559,32 +714,47 @@ with tab_webcam:
         st.download_button(
             label="📥 Download Result",
             data=download_bytes,
-            file_name="webcam_face_detection.png",
+            file_name="webcam_mask_result.png" if task_mode != "👁️ Face Detection (Haar)" else "webcam_face_result.png",
             mime="image/png",
             key="webcam_download",
         )
 
         if show_cropped and face_count > 0:
             st.markdown('<div class="gradient-divider"></div>', unsafe_allow_html=True)
-            st.markdown("#### ✂️ Cropped Faces")
-            cropped = crop_faces(cv2_img, faces)
-            cols = st.columns(min(face_count, 5))
-            for idx, face_img in enumerate(cropped):
-                with cols[idx % len(cols)]:
-                    st.image(
-                        cv2_to_pil(face_img),
-                        caption=f"Face #{idx + 1}",
-                        use_container_width=True,
-                    )
+            st.markdown("#### ✂️ Cropped Face Analysis")
+            
+            if task_mode == "👁️ Face Detection (Haar)":
+                cropped = crop_faces(cv2_img, faces)
+                cols = st.columns(min(face_count, 5))
+                for idx, face_img in enumerate(cropped):
+                    with cols[idx % len(cols)]:
+                        st.image(
+                            cv2_to_pil(face_img),
+                            caption=f"Face #{idx + 1}",
+                            use_container_width=True,
+                        )
+            else:
+                cropped_details = crop_mask_faces(cv2_img, detections)
+                cols = st.columns(min(face_count, 5))
+                for idx, (face_img, det) in enumerate(cropped_details):
+                    with cols[idx % len(cols)]:
+                        conf_percentage = f"{det['confidence']:.0%}"
+                        label_class = det['class_name']
+                        badge = f"🟢 {label_class} ({conf_percentage})" if det['class_id'] == 0 else f"🔴 {label_class} ({conf_percentage})"
+                        st.image(
+                            cv2_to_pil(face_img),
+                            caption=badge,
+                            use_container_width=True,
+                        )
 
 
 # ─── Tab 3: Video Detection ─────────────────────────────────────────────────────
 
 with tab_video:
-    st.markdown("""
+    st.markdown(f"""
     <div class="glass-card">
-        <h3 style="color:#ccd6f6; margin-top:0;">🎥 Video Face Detection</h3>
-        <p style="color:#8892b0;">Upload a video file to detect faces frame by frame.</p>
+        <h3 style="color:#ccd6f6; margin-top:0;">🎥 Video Processing</h3>
+        <p style="color:#8892b0;">Upload a video file to run frame-by-frame analysis.</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -653,6 +823,8 @@ with tab_video:
                 frame_idx = 0
                 processed = 0
                 total_faces_found = 0
+                total_masks_found = 0
+                total_nomasks_found = 0
 
                 while cap.isOpened() and processed < max_frames:
                     success, frame = cap.read()
@@ -660,37 +832,83 @@ with tab_video:
                         break
 
                     if frame_idx % skip_frames == 0:
-                        result, faces = process_video_frame(
-                            frame, cascade, scale_factor, min_neighbors
-                        )
-                        face_count = get_face_count(faces)
-                        total_faces_found += face_count
+                        
+                        # Haar face detection
+                        if task_mode == "👁️ Face Detection (Haar)":
+                            result, faces = process_video_frame(
+                                frame, cascade, scale_factor, min_neighbors
+                            )
+                            face_count = get_face_count(faces)
+                            total_faces_found += face_count
+                            caption_txt = f"Frame {frame_idx} — {face_count} face(s)"
+                        
+                        # Deep learning face mask detection
+                        else:
+                            if mask_net is not None:
+                                detections = detect_masks(
+                                    frame,
+                                    mask_net,
+                                    conf_thresh=mask_conf_thresh,
+                                    iou_thresh=mask_iou_thresh
+                                )
+                                face_count = len(detections)
+                                mask_count = sum(1 for d in detections if d['class_id'] == 0)
+                                nomask_count = sum(1 for d in detections if d['class_id'] == 1)
+                                
+                                total_faces_found += face_count
+                                total_masks_found += mask_count
+                                total_nomasks_found += nomask_count
+                                
+                                result = draw_mask_bounding_boxes(frame, detections, show_label=show_labels)
+                                result = draw_mask_count_badge(result, mask_count, nomask_count)
+                                compliance_txt = f"({mask_count}/{face_count} masked)" if face_count > 0 else ""
+                                caption_txt = f"Frame {frame_idx} — {face_count} face(s) {compliance_txt}"
+                            else:
+                                result = frame.copy()
+                                face_count = 0
+                                caption_txt = f"Frame {frame_idx}"
 
                         frame_placeholder.image(
                             cv2_to_pil(result),
-                            caption=f"Frame {frame_idx} — {face_count} face(s)",
+                            caption=caption_txt,
                             use_container_width=True,
                         )
 
                         processed += 1
                         progress = processed / max_frames
                         progress_bar.progress(progress)
-                        status_text.markdown(
-                            f"Processing frame **{frame_idx}** / {total_frames} "
-                            f"| Processed: **{processed}** | Faces in frame: **{face_count}**"
-                        )
+                        
+                        status_str = f"Processing frame **{frame_idx}** / {total_frames} | Processed: **{processed}**"
+                        if task_mode == "👁️ Face Detection (Haar)":
+                            status_str += f" | Faces in frame: **{face_count}**"
+                        else:
+                            status_str += f" | Faces: **{face_count}** (😷 Masked: **{mask_count}** | 🔴 Unmasked: **{nomask_count}**)"
+                            
+                        status_text.markdown(status_str)
 
                     frame_idx += 1
 
                 cap.release()
                 progress_bar.progress(1.0)
 
-                st.markdown(f"""
-                <div class="success-banner">
-                    ✅ Video processing complete! Processed <strong>{processed}</strong> frames. 
-                    Total face detections across all frames: <strong>{total_faces_found}</strong>
-                </div>
-                """, unsafe_allow_html=True)
+                if task_mode == "👁️ Face Detection (Haar)":
+                    st.markdown(f"""
+                    <div class="success-banner">
+                        ✅ Video processing complete! Processed <strong>{processed}</strong> frames. 
+                        Total face detections: <strong>{total_faces_found}</strong>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    overall_compliance = (total_masks_found / total_faces_found * 100) if total_faces_found > 0 else 100.0
+                    st.markdown(f"""
+                    <div class="success-banner">
+                        ✅ Video processing complete! Processed <strong>{processed}</strong> frames.<br>
+                        • Total detections: <strong>{total_faces_found}</strong><br>
+                        • Wearing mask: <strong>{total_masks_found}</strong><br>
+                        • Without mask: <strong>{total_nomasks_found}</strong><br>
+                        • Overall Mask Compliance: <strong>{overall_compliance:.1f}%</strong>
+                    </div>
+                    """, unsafe_allow_html=True)
 
         # Cleanup temp file
         try:
@@ -706,9 +924,12 @@ with tab_about:
     <div class="glass-card">
         <h3 style="color:#ccd6f6; margin-top:0;">ℹ️ About This Project</h3>
         <p style="color:#8892b0;">
-            A real-time Face Detection System built with Python, OpenCV, and Streamlit.
-            This project demonstrates Computer Vision fundamentals using the 
-            Haar Cascade Classifier algorithm.
+            An interactive Computer Vision demonstration application built using Python, OpenCV, and Streamlit.
+            It offers two primary modes of operation: traditional face detection using Haar Cascade classifiers 
+            and modern deep learning face mask compliance detection using Single Shot MultiBox Detector (SSD) models.
+        </p>
+        <p style="color:#00f5d4; font-weight: 600; font-size:1.1rem; margin-top: 1rem;">
+            🌍 "First of all, we hope the people in the world defeat COVID-2019 as soon as possible. Stay strong, all the countries in the world."
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -718,47 +939,36 @@ with tab_about:
     with col1:
         st.markdown("""
         <div class="glass-card">
-            <h4 style="color:#00f5d4; margin-top:0;">🔍 Face Detection vs Recognition</h4>
-            <table style="width:100%; color:#ccd6f6; border-collapse:collapse;">
-                <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
-                    <th style="padding:12px 8px; text-align:left; color:#8892b0;">Aspect</th>
-                    <th style="padding:12px 8px; text-align:left; color:#00f5d4;">Detection</th>
-                    <th style="padding:12px 8px; text-align:left; color:#7b61ff;">Recognition</th>
-                </tr>
-                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-                    <td style="padding:10px 8px;">Question</td>
-                    <td style="padding:10px 8px;">Is there a face?</td>
-                    <td style="padding:10px 8px;">Whose face is it?</td>
-                </tr>
-                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-                    <td style="padding:10px 8px;">Output</td>
-                    <td style="padding:10px 8px;">Bounding boxes</td>
-                    <td style="padding:10px 8px;">Identity labels</td>
-                </tr>
-                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-                    <td style="padding:10px 8px;">Complexity</td>
-                    <td style="padding:10px 8px;">Moderate</td>
-                    <td style="padding:10px 8px;">High</td>
-                </tr>
-                <tr>
-                    <td style="padding:10px 8px;">Training Data</td>
-                    <td style="padding:10px 8px;">Pre-trained</td>
-                    <td style="padding:10px 8px;">Custom dataset</td>
-                </tr>
-            </table>
+            <h4 style="color:#00f5d4; margin-top:0;">😷 DL SSD Model Details</h4>
+            <p style="color:#ccd6f6; line-height:1.7;">
+                The Face Mask Detection system utilizes a lightweight <strong>Single Shot Detector (SSD)</strong> architecture:
+            </p>
+            <ul style="color:#ccd6f6; line-height:1.6; padding-left:20px;">
+                <li><strong>Efficiency:</strong> Customized backbone with only 8 convolutional layers, totaling <strong>1.01M parameters</strong> and 24 total layers. Fully optimized for high FPS inference on standard CPU and mobile devices.</li>
+                <li><strong>Dataset:</strong> Trained on a verification dataset of approximately <strong>7,971 images</strong> sourced from public datasets (WIDER Face & MAFA), with annotations double-verified manually for high classification accuracy.</li>
+                <li><strong>Resolution:</strong> The network processes frames at a target shape of <strong>260×260</strong> pixels.</li>
+            </ul>
         </div>
         """, unsafe_allow_html=True)
 
     with col2:
         st.markdown("""
         <div class="glass-card">
-            <h4 style="color:#00f5d4; margin-top:0;">🧠 How Haar Cascade Works</h4>
-            <p style="color:#ccd6f6; line-height:1.8;">
-                <strong>1. Image Pyramid:</strong> The image is scaled down progressively to detect faces at different sizes.<br><br>
-                <strong>2. Sliding Window:</strong> A detection window slides across each scaled image.<br><br>
-                <strong>3. Haar Features:</strong> The classifier evaluates edge, line, and rectangle features within each window.<br><br>
-                <strong>4. Cascade Stages:</strong> Multiple classifier stages quickly reject non-face regions, focusing computation on likely face areas.<br><br>
-                <strong>5. Detection:</strong> Windows passing all stages are marked as detected faces.
+            <h4 style="color:#00f5d4; margin-top:0;">⚙️ Open Source Framework Support</h4>
+            <p style="color:#ccd6f6; line-height:1.7;">
+                We have open-sourced the models and corresponding inference codes across all the following mainstream deep learning frameworks in this project directory:
+            </p>
+            <div style="color:#ccd6f6; display:grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div>🔥 <strong>PyTorch</strong> (.pth)</div>
+                <div>⚡ <strong>TensorFlow</strong> (.pb, .tflite)</div>
+                <div>🧠 <strong>Keras</strong> (.json, .hdf5)</div>
+                <div>🌀 <strong>MXNet</strong> (.params)</div>
+                <div>☕ <strong>Caffe</strong> (.prototxt, .caffemodel)</div>
+                <div>🛶 <strong>PaddlePaddle</strong> (paddle/)</div>
+                <div>👁️ <strong>OpenCV DNN</strong> (Inference)</div>
+            </div>
+            <p style="color:#8892b0; font-size:0.85rem; margin-top: 15px;">
+                Look at the root level script files (e.g. <code>pytorch_infer.py</code>, <code>tensorflow_infer.py</code>) to run CLI inference using your favorite framework locally.
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -772,11 +982,11 @@ with tab_about:
         <div class="glass-card">
             <h4 style="color:#00f5d4; margin-top:0;">🛠️ Tech Stack</h4>
             <div style="color:#ccd6f6;">
-                <div class="tech-stack-item">🐍 <strong>Python 3.14</strong> — Core language</div>
-                <div class="tech-stack-item">👁️ <strong>OpenCV 4.13</strong> — Computer Vision</div>
-                <div class="tech-stack-item">🚀 <strong>Streamlit</strong> — Web framework</div>
-                <div class="tech-stack-item">🔢 <strong>NumPy</strong> — Array operations</div>
-                <div class="tech-stack-item">🖼️ <strong>Pillow</strong> — Image processing</div>
+                <div class="tech-stack-item">🐍 <strong>Python 3.12</strong> — Core language</div>
+                <div class="tech-stack-item">👁️ <strong>OpenCV 4.13</strong> — Computer Vision Engine</div>
+                <div class="tech-stack-item">🚀 <strong>Streamlit</strong> — Glassmorphic Web App UI</div>
+                <div class="tech-stack-item">🔢 <strong>NumPy</strong> — Tensor & Anchor decoding</div>
+                <div class="tech-stack-item">🖼️ <strong>Pillow</strong> — Image processing functions</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -784,16 +994,16 @@ with tab_about:
     with col4:
         st.markdown("""
         <div class="glass-card">
-            <h4 style="color:#00f5d4; margin-top:0;">✨ Features</h4>
+            <h4 style="color:#00f5d4; margin-top:0;">✨ Main Capabilities</h4>
             <div>
-                <span class="feature-badge">📸 Image Detection</span>
-                <span class="feature-badge">📷 Webcam Capture</span>
-                <span class="feature-badge">🎥 Video Processing</span>
-                <span class="feature-badge">🔢 Face Counting</span>
-                <span class="feature-badge">✂️ Face Cropping</span>
-                <span class="feature-badge">📥 Download Results</span>
-                <span class="feature-badge">⚙️ Tunable Parameters</span>
-                <span class="feature-badge">🎨 Custom Box Colors</span>
+                <span class="feature-badge">👁️ Face Detection</span>
+                <span class="feature-badge">😷 Face Mask Detection</span>
+                <span class="feature-badge">📸 Image File Upload</span>
+                <span class="feature-badge">📷 Webcam Snapshot</span>
+                <span class="feature-badge">🎥 Video Frame Processing</span>
+                <span class="feature-badge">📊 Compliance Metrics</span>
+                <span class="feature-badge">✂️ Cropped Face Grids</span>
+                <span class="feature-badge">📥 Result Downloads</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -802,14 +1012,13 @@ with tab_about:
 
     st.markdown("""
     <div class="glass-card">
-        <h4 style="color:#00f5d4; margin-top:0;">🚀 Future Enhancements</h4>
+        <h4 style="color:#00f5d4; margin-top:0;">🚀 Future Extensions</h4>
         <div>
             <span class="feature-badge">🆔 Face Recognition</span>
-            <span class="feature-badge">📋 Attendance System</span>
-            <span class="feature-badge">😊 Emotion Detection</span>
-            <span class="feature-badge">😷 Mask Detection</span>
-            <span class="feature-badge">📊 Analytics Dashboard</span>
-            <span class="feature-badge">🎥 Real-time WebRTC</span>
+            <span class="feature-badge">📋 Digital Attendance</span>
+            <span class="feature-badge">😊 Emotion Analysis</span>
+            <span class="feature-badge">📊 Live Analytics Dashboard</span>
+            <span class="feature-badge">🎥 Real-time WebRTC streams</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -820,7 +1029,7 @@ with tab_about:
 st.markdown('<div class="gradient-divider"></div>', unsafe_allow_html=True)
 st.markdown("""
 <div style="text-align:center; padding:1rem; color:#4a5568; font-size:0.8rem;">
-    <p>👁️ Face Detection System v1.0 &nbsp;|&nbsp; Built with OpenCV & Streamlit &nbsp;|&nbsp; 
+    <p>😷 Face & Mask Compliance System v1.1 &nbsp;|&nbsp; Built with OpenCV & Streamlit &nbsp;|&nbsp; 
     <a href="https://github.com/BKiran27" style="color:#00f5d4; text-decoration:none;">BKiran27</a></p>
 </div>
 """, unsafe_allow_html=True)
