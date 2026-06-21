@@ -17,13 +17,6 @@
 
 </div>
 
----
-
-> [!NOTE]  
-> **First of all, we hope the people in the world defeat COVID-2019 as soon as possible. Stay strong, all the countries in the world.**  
-> *我们做出了这套口罩检测模型并开源了对应的推理代码，支持五大主流深度学习框架（PyTorch、TensorFlow、Keras、MXNet和Caffe）及PaddlePaddle和OpenCV DNN。*
-
----
 
 ## ✨ Features
 
