@@ -7,7 +7,7 @@
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.58-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-00C853?style=for-the-badge)
 
-[![Live Demo](https://img.shields.io/badge/🚀_Live_Demo-Face_&_Mask_System-00f5d4?style=for-the-badge)](https://bkiran27-face-detection-system.streamlit.app)
+[![Live Demo](https://img.shields.io/badge/🚀_Live_Demo-Face_&_Mask_System-00f5d4?style=for-the-badge)](https://face-detection-system-ia62j29biukcxy3oz5wrn8.streamlit.app/)
 
 **An interactive Computer Vision application for face detection and mask compliance analysis. Powered by OpenCV Haar Cascades and a lightweight Deep Learning SSD (Single Shot Detector) model.**
 
