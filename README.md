@@ -2,12 +2,16 @@
 
 <div align="center">
 
-![Python](https://img.shields.io/badge/Python-3.14-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.13-5C3EE8?style=for-the-badge&logo=opencv&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.58-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-00C853?style=for-the-badge)
 
+[![Live Demo](https://img.shields.io/badge/🚀_Live_Demo-Face_Detection_System-00f5d4?style=for-the-badge)](https://bkiran27-face-detection-system.streamlit.app)
+
 **A real-time Face Detection System powered by OpenCV's Haar Cascade Classifier with an interactive Streamlit web interface.**
+
+### 🌐 [**Live Demo → bkiran27-face-detection-system.streamlit.app**](https://bkiran27-face-detection-system.streamlit.app)
 
 [Features](#-features) • [Installation](#-installation) • [Usage](#-usage) • [How It Works](#-how-it-works) • [Project Structure](#-project-structure)
 
