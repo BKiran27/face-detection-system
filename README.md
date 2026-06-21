@@ -138,16 +138,4 @@ face-detection-system/
 - [ ] 🧠 Deep learning-based detection (DNN/MTCNN)
 
 
-## 📜 License
 
-This project is open source and available under the [MIT License](LICENSE).
-
----
-
-<div align="center">
-
-**Built with ❤️ by [BKiran27](https://github.com/BKiran27)**
-
-Python • OpenCV • Streamlit
-
-</div>
